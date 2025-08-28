@@ -3,8 +3,17 @@
 // ===================================================================================
 export default {
   async fetch(request, env) {
-    // This worker assumes that the required environment variables and KV binding are set.
-    // If they are not, it will fail, which is expected.
+    // Optional Authentication: Check for credentials if they are set in the environment.
+    if (env.AUTH_USERNAME && env.AUTH_PASSWORD) {
+      const auth = await basicAuthentication(request, env);
+      if (!auth.success) {
+        return new Response('Unauthorized', {
+          status: 401,
+          headers: { 'WWW-Authenticate': 'Basic realm="Restricted Area"' },
+        });
+      }
+    }
+
     const url = new URL(request.url);
     const path = decodeURIComponent(url.pathname);
 
@@ -18,7 +27,36 @@ export default {
 
 
 // ===================================================================================
-// SECTION 1: CORE FILE BROWSER APPLICATION
+// SECTION 1: AUTHENTICATION
+// ===================================================================================
+
+async function basicAuthentication(request, env) {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    return { success: false };
+  }
+  
+  const encodedCreds = authHeader.substring(6);
+  try {
+    const creds = atob(encodedCreds);
+    const [username, password] = creds.split(':');
+    
+    const userMatch = username === env.AUTH_USERNAME;
+    const passMatch = password === env.AUTH_PASSWORD;
+
+    if (userMatch && passMatch) {
+      return { success: true };
+    }
+  } catch (e) {
+    // Decoding failed, invalid header.
+  }
+  
+  return { success: false };
+}
+
+
+// ===================================================================================
+// SECTION 2: CORE FILE BROWSER APPLICATION
 // ===================================================================================
 
 async function fetchWithTokenRefresh(requestFn, env) {
@@ -95,7 +133,7 @@ async function handleFileRequest(request, path, env) {
 
 
 // ===================================================================================
-// SECTION 2: HTML TEMPLATES
+// SECTION 3: HTML TEMPLATES
 // ===================================================================================
 
 function formatBytes(bytes, decimals = 2) {
@@ -110,42 +148,34 @@ function formatBytes(bytes, decimals = 2) {
 function renderFileBrowserHTML(files, path) {
   files.sort((a, b) => { if (a['.tag'] === b['.tag']) return a.name.localeCompare(b.name, undefined, { numeric: true }); return a['.tag'] === 'folder' ? -1 : 1; });
   const fileListItems = files.map(file => {
-    const isFolder = file['.tag'] === 'folder';
-    const icon = isFolder ? '📁' : '📄';
-    const href = isFolder ? `${file.path_lower}/` : file.path_lower;
-    
-    // **NEW**: Add file size if it's a file, otherwise empty string.
+    const isFolder = file['.tag'] === 'folder', icon = isFolder ? '📁' : '📄', href = isFolder ? `${file.path_lower}/` : file.path_lower;
     const fileSize = isFolder ? '' : `<span class="file-size">${formatBytes(file.size)}</span>`;
     const downloadButton = isFolder ? '' : `<a href="${href}" class="download">Download</a>`;
-    
-    return `<li data-name="${file.name.toLowerCase()}">
-      <div class="file-info"><a href="${href}"><span class="icon">${icon}</span> ${file.name}</a></div>
-      ${fileSize}
-      ${downloadButton}
-    </li>`;
+    return `<li data-name="${file.name.toLowerCase()}"><div class="file-info"><a href="${href}"><span class="icon">${icon}</span> ${file.name}</a></div>${fileSize}${downloadButton}</li>`;
   }).join('');
-
   let upLevelLink = ''; if (path !== '/' && path !== '') { const segments = path.split('/').filter(s => s); segments.pop(); const parentHref = segments.length > 0 ? `/${segments.join('/')}/` : '/'; upLevelLink = `<li id="parent-dir-link"><a href="${parentHref}"><span class="icon">📁</span> ..</a></li>`; }
   let breadcrumbs = '<a href="/">Root</a>'; const segments = path.split('/').filter(s => s); let cumulativePath = ''; for (const segment of segments) { cumulativePath += `/${segment}`; breadcrumbs += ` / <a href="${cumulativePath}/">${segment}</a>`; }
   return `
 <!DOCTYPE html><html><head><title>Dropbox Index</title><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:0;background:#f8f9fa;color:#212529}
+:root { --bg-color: #1e1e1e; --text-color: #e0e0e0; --link-color: #90caf9; --border-color: #333; --search-bg: #333; --header-color: #bb86fc; --size-color: #888; --download-bg: #03dac6; --download-text: #000; }
+body{font-family:-apple-system,BlinkMacSystem-Font,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg-color);color:var(--text-color)}
 #container{max-width:900px;margin:0 auto;padding:20px}
 #header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;margin-bottom:20px;gap:15px}
-#folder-path{font-size:1.2em;color:#495057;word-break:break-all}
-#folder-path a{color:#007bff;text-decoration:none}
+#folder-path{font-size:1.2em;color:var(--header-color);word-break:break-all}
+#folder-path a{color:var(--link-color);text-decoration:none}
 #folder-path a:hover{text-decoration:underline}
-#search{padding:10px;border:1px solid #ced4da;border-radius:5px;width:250px;font-size:1em}
-#file-list{list-style:none;padding:0;margin:0;border:1px solid #dee2e6;border-radius:5px;background:#fff}
-#file-list li{display:flex;align-items:center;padding:12px 15px;border-bottom:1px solid #dee2e6}
+#search{padding:10px;border:1px solid var(--border-color);border-radius:5px;width:250px;font-size:1em;background:var(--search-bg);color:var(--text-color)}
+#search::placeholder{color:#aaa}
+#file-list{list-style:none;padding:0;margin:0;border:1px solid var(--border-color);border-radius:5px;background:var(--bg-color)}
+#file-list li{display:flex;align-items:center;padding:12px 15px;border-bottom:1px solid var(--border-color)}
 #file-list li:last-child{border-bottom:none}
 #file-list .file-info{flex-grow:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#file-list .file-info a{text-decoration:none;color:#007bff;font-weight:500}
+#file-list .file-info a{text-decoration:none;color:var(--link-color);font-weight:500}
 #file-list .file-info a:hover{text-decoration:underline}
-.file-size{color:#6c757d;margin:0 15px;white-space:nowrap}
-#file-list .download{padding:6px 12px;background:#28a745;color:#fff;border-radius:5px;text-decoration:none;font-size:.9em;white-space:nowrap}
-#file-list .download:hover{background:#218838}
+.file-size{color:var(--size-color);margin:0 15px;white-space:nowrap}
+#file-list .download{padding:6px 12px;background:var(--download-bg);color:var(--download-text);border-radius:5px;text-decoration:none;font-size:.9em;white-space:nowrap;font-weight:bold}
+#file-list .download:hover{opacity:0.8}
 .icon{margin-right:8px}
 </style>
 </head><body><div id="container"><div id="header"><h1 id="folder-path">${breadcrumbs}</h1><input type="text" id="search" placeholder="Search this directory..."></div>
