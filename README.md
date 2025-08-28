@@ -61,13 +61,16 @@ This is a one-time process to get a token that allows the worker to generate its
 
 3.  **Configure Worker Variables and Bindings:**
     -   Go to your worker's settings page (**Settings > Variables**).
-    -   Under **Environment Variables**, click **"Add variable"** and add the following three secrets, making sure to click **"Encrypt"** for each one:
+    -   Under **Environment Variables**, click **"Add variable"** and add the following **required** secrets, making sure to click **"Encrypt"** for each one:
         -   `DROPBOX_APP_KEY`: Your app key.
         -   `DROPBOX_APP_SECRET`: Your app secret.
         -   `DROPBOX_REFRESH_TOKEN`: The refresh token you generated in Step 2.
+    -   **(Optional)** To enable password protection, add the following two encrypted secrets:
+        -   `AUTH_USERNAME`: The username you want to use.
+        -   `AUTH_PASSWORD`: The password you want to use.
     -   Scroll down to **KV Namespace Bindings**, click **"Add binding"**:
         -   **Variable name**: `DROPBOX_KV`
         -   **KV namespace**: Select the namespace you created.
     -   Click **"Save and Deploy"**.
 
-Your Dropbox index is now live at your worker's URL.````
+Your Dropbox index is now live at your worker's URL. If you set the authentication variables, you will be prompted to log in.
